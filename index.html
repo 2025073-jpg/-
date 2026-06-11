@@ -1,0 +1,1048 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>해양 쓰레기 표류 시뮬레이션 · SDG 14</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Noto+Sans+KR:wght@400;500;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <style>
+        :root {
+            --bg: rgba(8, 14, 26, 0.82);
+            --border: rgba(255,255,255,0.09);
+            --text: #f0f6ff;
+            --muted: #8ba3bf;
+            --accent: #22d3ee;
+            --accent2: #6366f1;
+            --danger: #fb7185;
+            --warn: #fbbf24;
+            --ok: #34d399;
+            --mpa: rgba(52, 211, 153, 0.22);
+            --radius: 16px;
+        }
+        * { margin:0; padding:0; box-sizing:border-box; }
+        body { font-family:'Inter','Noto Sans KR',sans-serif; background:#050a14; color:var(--text); overflow:hidden; }
+        #map { width:100%; height:100vh; background:#050a14 !important; }
+
+        .sidebar {
+            position:absolute; top:14px; left:14px; z-index:1000;
+            width:330px; max-height:calc(100vh - 28px); overflow-y:auto;
+            background:var(--bg); backdrop-filter:blur(22px);
+            border:1px solid var(--border); border-radius:var(--radius);
+            padding:18px; display:flex; flex-direction:column; gap:14px;
+            box-shadow:0 16px 48px rgba(0,0,0,.55);
+        }
+        .sidebar::-webkit-scrollbar { width:4px; }
+        .sidebar::-webkit-scrollbar-thumb { background:rgba(255,255,255,.12); border-radius:4px; }
+
+        .brand { display:flex; gap:10px; align-items:center; }
+        .brand-icon {
+            width:40px; height:40px; border-radius:12px;
+            background:linear-gradient(135deg,#0891b2,#6366f1);
+            display:flex; align-items:center; justify-content:center; font-size:18px;
+            box-shadow:0 0 20px rgba(34,211,238,.25);
+        }
+        .brand h1 { font-size:.92rem; font-weight:700; letter-spacing:-.02em; }
+        .brand p { font-size:.65rem; color:var(--muted); margin-top:2px; }
+
+        .sdg-banner {
+            padding:10px 12px; border-radius:10px; font-size:.68rem; line-height:1.55; color:var(--muted);
+            background:linear-gradient(135deg,rgba(8,145,178,.15),rgba(99,102,241,.08));
+            border:1px solid rgba(34,211,238,.2);
+        }
+        .sdg-banner strong { color:#67e8f9; display:block; margin-bottom:3px; font-size:.7rem; }
+
+        .section-title {
+            font-size:.62rem; font-weight:700; color:var(--accent);
+            text-transform:uppercase; letter-spacing:.08em; margin-bottom:6px;
+        }
+
+        .debris-palette { display:flex; flex-direction:column; gap:5px; }
+        .debris-btn {
+            display:flex; gap:10px; align-items:flex-start; padding:8px 10px;
+            border:1px solid var(--border); border-radius:10px; background:rgba(255,255,255,.02);
+            cursor:pointer; text-align:left; color:var(--text); font-family:inherit; font-size:.74rem; transition:.2s;
+        }
+        .debris-btn:hover { background:rgba(255,255,255,.05); }
+        .debris-btn.active { border-color:var(--accent); background:rgba(34,211,238,.08); box-shadow:inset 0 0 12px rgba(34,211,238,.06); }
+        .debris-btn .dot { width:11px; height:11px; border-radius:50%; margin-top:2px; flex-shrink:0; box-shadow:0 0 8px currentColor; }
+        .debris-btn .info small { display:block; color:var(--muted); font-size:.62rem; margin-top:2px; line-height:1.4; }
+        .risk-badge {
+            display:inline-block; padding:1px 5px; border-radius:4px; font-size:.58rem; font-weight:600; margin-top:3px;
+        }
+        .risk-low { background:rgba(52,211,153,.15); color:var(--ok); }
+        .risk-mid { background:rgba(251,191,36,.15); color:var(--warn); }
+        .risk-high { background:rgba(251,113,133,.15); color:var(--danger); }
+
+        .custom-form, .control-group { display:flex; flex-direction:column; gap:6px; }
+        .custom-form { padding:10px; border:1px solid var(--border); border-radius:10px; background:rgba(255,255,255,.015); }
+        .custom-form input[type=text] {
+            padding:7px 10px; border-radius:8px; border:1px solid var(--border);
+            background:rgba(0,0,0,.25); color:var(--text); font-family:inherit; font-size:.74rem;
+        }
+        .color-row { display:flex; justify-content:space-between; align-items:center; font-size:.72rem; color:var(--muted); }
+        .control-label { display:flex; justify-content:space-between; font-size:.7rem; color:var(--muted); }
+        .control-label span:last-child { color:var(--accent); font-weight:600; }
+        input[type=range] { -webkit-appearance:none; width:100%; height:3px; background:rgba(255,255,255,.12); border-radius:2px; }
+        input[type=range]::-webkit-slider-thumb {
+            -webkit-appearance:none; width:13px; height:13px; border-radius:50%;
+            background:var(--accent); cursor:pointer; box-shadow:0 0 8px rgba(34,211,238,.5);
+        }
+
+        .wind-presets { display:flex; gap:4px; }
+        .wind-btn {
+            flex:1; padding:6px 4px; border-radius:7px; border:1px solid var(--border);
+            background:rgba(255,255,255,.02); color:var(--muted); font-family:inherit;
+            font-size:.65rem; cursor:pointer; transition:.2s;
+        }
+        .wind-btn.active { border-color:var(--accent); color:var(--accent); background:rgba(34,211,238,.07); }
+
+        .toggle-row { display:flex; justify-content:space-between; align-items:center; font-size:.72rem; color:var(--muted); }
+        .toggle { position:relative; width:36px; height:18px; }
+        .toggle input { opacity:0; width:0; height:0; }
+        .toggle-slider { position:absolute; inset:0; background:rgba(255,255,255,.12); border-radius:20px; transition:.2s; cursor:pointer; }
+        .toggle-slider::before {
+            content:''; position:absolute; width:12px; height:12px; left:3px; bottom:3px;
+            background:#fff; border-radius:50%; transition:.2s;
+        }
+        .toggle input:checked + .toggle-slider { background:var(--accent); }
+        .toggle input:checked + .toggle-slider::before { transform:translateX(18px); }
+
+        .mini-stats { display:grid; grid-template-columns:repeat(3,1fr); gap:5px; }
+        .mini-stat {
+            padding:7px 4px; text-align:center; border-radius:8px;
+            border:1px solid var(--border); background:rgba(255,255,255,.02);
+        }
+        .mini-stat .val { font-size:.88rem; font-weight:700; font-family:monospace; }
+        .mini-stat .lbl { font-size:.55rem; color:var(--muted); margin-top:2px; }
+        .mini-stat.drift .val { color:var(--accent); }
+        .mini-stat.beach .val { color:var(--warn); }
+        .mini-stat.sunk .val { color:#64748b; }
+        .mini-stat.mpa .val { color:var(--ok); }
+
+        .btn {
+            width:100%; padding:9px; border:none; border-radius:10px;
+            font-family:inherit; font-size:.78rem; font-weight:600; cursor:pointer; transition:.2s;
+        }
+        .btn-primary { background:linear-gradient(135deg,#0891b2,#6366f1); color:#fff; box-shadow:0 4px 16px rgba(34,211,238,.2); }
+        .btn-primary:hover { transform:translateY(-1px); opacity:.92; }
+        .btn-secondary { background:rgba(255,255,255,.06); color:var(--text); border:1px solid var(--border); }
+        .btn-sm { width:auto; padding:5px 10px; font-size:.68rem; align-self:flex-end; }
+
+        .cursor-info {
+            position:absolute; bottom:16px; right:14px; z-index:1000; min-width:230px;
+            padding:10px 14px; border-radius:10px; font-size:.7rem; color:var(--muted);
+            background:var(--bg); backdrop-filter:blur(16px); border:1px solid var(--border);
+            pointer-events:none; box-shadow:0 8px 24px rgba(0,0,0,.4);
+        }
+        .cursor-info strong { color:var(--accent); }
+
+        .toast {
+            position:absolute; bottom:24px; left:50%; transform:translateX(-50%) translateY(50px);
+            z-index:5000; padding:8px 16px; border-radius:20px; font-size:.76rem; font-weight:500;
+            opacity:0; transition:.35s cubic-bezier(.34,1.56,.64,1); pointer-events:none; max-width:90vw; text-align:center;
+        }
+        .toast.show { transform:translateX(-50%) translateY(0); opacity:1; }
+        .toast.error { background:rgba(251,113,133,.95); color:#fff; }
+        .toast.warn { background:rgba(251,191,36,.95); color:#1e1b0e; }
+        .toast.info { background:rgba(34,211,238,.92); color:#042f2e; }
+
+        .loading-overlay {
+            position:fixed; inset:0; z-index:9999; background:#050a14;
+            display:flex; flex-direction:column; align-items:center; justify-content:center; gap:12px;
+            transition:opacity .4s;
+        }
+        .loading-overlay.hidden { opacity:0; pointer-events:none; }
+        .loading-spinner {
+            width:34px; height:34px; border:2px solid var(--border);
+            border-top-color:var(--accent); border-radius:50%; animation:spin .7s linear infinite;
+        }
+        @keyframes spin { to { transform:rotate(360deg); } }
+
+        /* Report modal */
+        .modal-backdrop {
+            position:fixed; inset:0; z-index:4000; background:rgba(4,8,17,.65);
+            backdrop-filter:blur(6px); opacity:0; pointer-events:none; transition:opacity .25s;
+        }
+        .modal-backdrop.open { opacity:1; pointer-events:auto; }
+        .report-window {
+            position:absolute; top:50%; left:50%; transform:translate(-50%,-48%) scale(.96);
+            width:620px; max-width:94vw; max-height:85vh; overflow:hidden;
+            background:#0a101c; border:1px solid var(--border); border-radius:14px;
+            box-shadow:0 24px 60px rgba(0,0,0,.7); opacity:0; transition:.3s cubic-bezier(.16,1,.3,1);
+            display:flex; flex-direction:column;
+        }
+        .modal-backdrop.open .report-window { transform:translate(-50%,-50%) scale(1); opacity:1; }
+        .window-header {
+            padding:12px 16px; border-bottom:1px solid var(--border);
+            display:flex; justify-content:space-between; align-items:center;
+            background:rgba(255,255,255,.02);
+        }
+        .window-header h2 { font-size:.85rem; font-weight:600; }
+        .window-close {
+            width:26px; height:26px; border:none; border-radius:50%;
+            background:rgba(255,255,255,.06); color:var(--muted); cursor:pointer;
+        }
+        .window-close:hover { background:var(--danger); color:#fff; }
+        .window-body { padding:18px; overflow-y:auto; display:flex; flex-direction:column; gap:14px; }
+
+        .rep-grid { display:grid; grid-template-columns:repeat(4,1fr); gap:8px; }
+        .rep-card { padding:10px 6px; text-align:center; border:1px solid var(--border); border-radius:8px; background:rgba(255,255,255,.02); }
+        .rep-card h4 { font-size:.58rem; color:var(--muted); text-transform:uppercase; margin-bottom:4px; }
+        .rep-card p { font-size:1rem; font-weight:700; font-family:monospace; }
+
+        .donut-wrap { display:flex; gap:20px; align-items:center; flex-wrap:wrap; }
+        .donut {
+            width:140px; height:140px; border-radius:50%; position:relative; flex-shrink:0;
+            display:flex; align-items:center; justify-content:center;
+        }
+        .donut-hole {
+            width:78px; height:78px; border-radius:50%; background:#0a101c;
+            display:flex; flex-direction:column; align-items:center; justify-content:center;
+        }
+        .donut-hole .total { font-size:1.2rem; font-weight:700; }
+        .donut-hole .lbl { font-size:.58rem; color:var(--muted); }
+        .donut-legend { flex:1; display:flex; flex-direction:column; gap:6px; font-size:.72rem; }
+        .legend-row { display:flex; justify-content:space-between; color:var(--muted); }
+        .legend-row b { color:var(--text); }
+
+        .stats-table { width:100%; border-collapse:collapse; font-size:.72rem; }
+        .stats-table th { text-align:left; padding:6px 8px; color:var(--muted); border-bottom:1px solid var(--border); font-weight:500; }
+        .stats-table td { padding:6px 8px; border-bottom:1px solid rgba(255,255,255,.04); }
+        .type-dot { display:inline-block; width:8px; height:8px; border-radius:50%; margin-right:5px; }
+
+        .sdg-footer { font-size:.68rem; color:var(--muted); line-height:1.6; padding:10px; border-radius:8px; border:1px solid var(--border); background:rgba(34,211,238,.04); }
+        .sdg-footer strong { color:#67e8f9; }
+
+        .leaflet-control-attribution { background:none !important; color:rgba(255,255,255,.2) !important; font-size:9px !important; }
+    </style>
+</head>
+<body>
+
+<div class="loading-overlay" id="loadingOverlay">
+    <div class="loading-spinner"></div>
+    <p id="loadingText">실측 해안선 · 수심 모델 로드 중…</p>
+</div>
+
+<div id="map"></div>
+
+<aside class="sidebar">
+    <div class="brand">
+        <div class="brand-icon">🌊</div>
+        <div>
+            <h1>해양 쓰레기 표류 시뮬레이션</h1>
+            <p>SDG 14 · Korean Peninsula Model</p>
+        </div>
+    </div>
+
+    <div class="sdg-banner">
+        <strong>SDG 14 — 바다를 보존하고 지속 가능하게 이용하자</strong>
+        목표 14.1: 2025년까지 해양 쓰레기를 포함한 모든 유형의 해양 오염을 예방하고 대폭 줄인다.
+    </div>
+
+    <div>
+        <div class="section-title">쓰레기 종류</div>
+        <div class="debris-palette" id="debrisPalette"></div>
+    </div>
+
+    <div>
+        <div class="section-title">사용자 정의</div>
+        <div class="custom-form">
+            <input type="text" id="customName" placeholder="이름 (예: 고무장갑)" maxlength="18">
+            <div class="color-row"><span>색상</span><input type="color" id="customColor" value="#22d3ee"></div>
+            <div class="control-group">
+                <div class="control-label"><span>밀도</span><span id="cDensityVal">25</span></div>
+                <input type="range" id="cDensity" min="0" max="100" value="25">
+            </div>
+            <div class="control-group">
+                <div class="control-label"><span>바람/파도 저항</span><span id="cWindVal">55</span></div>
+                <input type="range" id="cWind" min="0" max="100" value="55">
+            </div>
+            <div class="control-group">
+                <div class="control-label"><span>부력 (최대 수심 m)</span><span id="cFloatVal">9999</span></div>
+                <input type="range" id="cFloat" min="50" max="9999" value="9999" step="50">
+            </div>
+            <button class="btn btn-secondary btn-sm" onclick="addCustomDebris()">+ 추가</button>
+        </div>
+    </div>
+
+    <div>
+        <div class="section-title">환경 설정</div>
+        <div class="control-group">
+            <div class="control-label"><span>표류 속도</span><span id="speedValue">5</span></div>
+            <input type="range" id="speedSlider" min="1" max="20" value="5">
+        </div>
+        <div class="control-group">
+            <div class="control-label"><span>난류 강도</span><span id="turbValue">45</span></div>
+            <input type="range" id="turbSlider" min="0" max="100" value="45">
+        </div>
+        <div class="control-group">
+            <div class="control-label"><span>수심 모델 강도</span><span id="depthValue">100</span></div>
+            <input type="range" id="depthSlider" min="50" max="200" value="100">
+        </div>
+        <div class="control-group">
+            <div class="control-label"><span>계절풍</span></div>
+            <div class="wind-presets">
+                <button class="wind-btn" data-wind="none" onclick="setWindPreset('none')">없음</button>
+                <button class="wind-btn active" data-wind="summer" onclick="setWindPreset('summer')">여름 몬순</button>
+                <button class="wind-btn" data-wind="winter" onclick="setWindPreset('winter')">겨울 북서풍</button>
+            </div>
+        </div>
+        <div class="toggle-row"><span>수심 Canvas 레이어</span><label class="toggle"><input type="checkbox" id="showDepth"><span class="toggle-slider"></span></label></div>
+        <div class="toggle-row"><span>해류 벡터</span><label class="toggle"><input type="checkbox" id="showVectors"><span class="toggle-slider"></span></label></div>
+        <div class="toggle-row"><span>해양보호구역(MPA)</span><label class="toggle"><input type="checkbox" id="showMPA" checked><span class="toggle-slider"></span></label></div>
+        <div class="toggle-row"><span>표류 경로</span><label class="toggle"><input type="checkbox" id="showPaths" checked><span class="toggle-slider"></span></label></div>
+    </div>
+
+    <div>
+        <div class="section-title">실시간 현황</div>
+        <div class="mini-stats">
+            <div class="mini-stat"><div class="val" id="statTotal">0</div><div class="lbl">전체</div></div>
+            <div class="mini-stat drift"><div class="val" id="statDrift">0</div><div class="lbl">표류</div></div>
+            <div class="mini-stat beach"><div class="val" id="statBeach">0</div><div class="lbl">해안</div></div>
+            <div class="mini-stat sunk"><div class="val" id="statSunk">0</div><div class="lbl">침강</div></div>
+            <div class="mini-stat mpa"><div class="val" id="statMPA">0</div><div class="lbl">MPA 침범</div></div>
+            <div class="mini-stat"><div class="val" id="statRisk">0</div><div class="lbl">위험 지수</div></div>
+        </div>
+    </div>
+
+    <button class="btn btn-primary" onclick="openReportModal()">📊 SDG 14 통계 보고서</button>
+    <button class="btn btn-secondary" onclick="clearParticles()">전체 초기화</button>
+</aside>
+
+<div class="cursor-info" id="cursorInfo">쓰레기를 선택하고 바다를 클릭하세요</div>
+<div class="toast" id="toast"></div>
+
+<div class="modal-backdrop" id="reportModal">
+    <div class="report-window">
+        <div class="window-header">
+            <h2>📊 해양 쓰레기 표류 · SDG 14 보고서</h2>
+            <button class="window-close" onclick="closeReportModal()">✕</button>
+        </div>
+        <div class="window-body" id="reportBody"></div>
+    </div>
+</div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+// ═══════════════════════════════════════════════════════════
+// CONFIG & DATA SOURCES
+// ═══════════════════════════════════════════════════════════
+const GEOJSON_URL = 'https://cdn.jsdelivr.net/gh/datasets/geo-countries@master/data/countries.geojson';
+const LAND_CODES = ['KOR', 'PRK', 'JPN'];
+const KOREA_BBOX = { minLat: 32.5, maxLat: 43.5, minLng: 122.5, maxLng: 133.5 };
+
+// countries.geojson에 누락되는 소규모 섬 보강 (울릉·독도 등)
+const ISLAND_SUPPLEMENTS = [
+    { outer: [[130.70,37.62],[130.78,37.58],[130.88,37.52],[130.96,37.48],[131.00,37.52],[130.98,37.58],[130.92,37.62],[130.82,37.64],[130.70,37.62]] },
+    { outer: [[131.48,37.27],[131.54,37.24],[131.58,37.26],[131.56,37.29],[131.50,37.28],[131.48,37.27]] },
+    { outer: [[125.40,34.55],[125.48,34.50],[125.55,34.52],[125.52,34.58],[125.44,34.60],[125.40,34.55]] }
+];
+
+// 해양보호구역 (MPA) — 근사 원형/다각형
+const MPA_ZONES = [
+    { id:'jeju', name:'제주 연안 MPA', center:[33.45,126.55], radius:0.55, color:'#34d399' },
+    { id:'dokdo', name:'독도 해역 MPA', center:[37.24,131.52], radius:0.18, color:'#22d3ee' },
+    { id:'suncheon', name:'순천만 습지 MPA', center:[34.82,127.52], radius:0.25, color:'#a78bfa' },
+    { id:'ulleung', name:'울릉도 MPA', center:[37.48,130.90], radius:0.22, color:'#34d399' },
+    { id:'westsea', name:'서해안어장 MPA', center:[36.0,125.8], radius:0.4, color:'#fbbf24' }
+];
+
+// 한반도 해역 실측 기반 수심 프로파일 (출처: KHOA·IOC 황해/동해/남해 평균 수심 근사)
+const BATHY_REGIONS = [
+    { name:'황해', test:(lat,lng)=>lng<126.2, shelfDepth:44, slope:0.35 },
+    { name:'남해', test:(lat,lng)=>lat<35.5&&lng>=126.2&&lng<129.5, shelfDepth:120, slope:0.55 },
+    { name:'동해', test:(lat,lng)=>lng>=129.5, shelfDepth:168, slope:0.75 },
+    { name:'서해중부', test:()=>true, shelfDepth:60, slope:0.45 }
+];
+
+let landPolygons = [], landSegments = [], landLayer = null, mpaLayer = null;
+let landDataReady = false;
+let depthGrid = null, depthGridMeta = null;
+let depthCanvasLayer = null, vectorLayer = null;
+let overlayRebuildTimer = null;
+let mpaViolationCount = 0;
+let totalRiskScore = 0;
+
+// ═══════════════════════════════════════════════════════════
+// LAND GEOMETRY
+// ═══════════════════════════════════════════════════════════
+function extractLandGeometry(features) {
+    landPolygons = []; landSegments = [];
+    const processPoly = (poly) => {
+        const outer = poly[0], holes = poly.slice(1);
+        let minLng=Infinity,maxLng=-Infinity,minLat=Infinity,maxLat=-Infinity;
+        for (const pt of outer) {
+            minLng=Math.min(minLng,pt[0]); maxLng=Math.max(maxLng,pt[0]);
+            minLat=Math.min(minLat,pt[1]); maxLat=Math.max(maxLat,pt[1]);
+        }
+        landPolygons.push({ outer, holes, bounds:{minLng,maxLng,minLat,maxLat} });
+        for (const ring of poly) addRingSegments(ring);
+    };
+    for (const f of features) {
+        const g = f.geometry; if (!g) continue;
+        if (g.type === 'Polygon') processPoly(g.coordinates);
+        else if (g.type === 'MultiPolygon') g.coordinates.forEach(processPoly);
+    }
+    ISLAND_SUPPLEMENTS.forEach(island => {
+        let minLng=Infinity,maxLng=-Infinity,minLat=Infinity,maxLat=-Infinity;
+        for (const pt of island.outer) {
+            minLng=Math.min(minLng,pt[0]); maxLng=Math.max(maxLng,pt[0]);
+            minLat=Math.min(minLat,pt[1]); maxLat=Math.max(maxLat,pt[1]);
+        }
+        landPolygons.push({ outer:island.outer, holes:[], bounds:{minLng,maxLng,minLat,maxLat} });
+        addRingSegments(island.outer);
+    });
+}
+
+function addRingSegments(ring) {
+    for (let i = 0; i < ring.length - 1; i++) {
+        landSegments.push({ lat1:ring[i][1], lng1:ring[i][0], lat2:ring[i+1][1], lng2:ring[i+1][0] });
+    }
+}
+
+function pointInRing(lng, lat, ring) {
+    let inside = false;
+    for (let i=0,j=ring.length-1; i<ring.length; j=i++) {
+        const xi=ring[i][0],yi=ring[i][1],xj=ring[j][0],yj=ring[j][1];
+        if (((yi>lat)!==(yj>lat)) && (lng < (xj-xi)*(lat-yi)/(yj-yi)+xi)) inside=!inside;
+    }
+    return inside;
+}
+
+function isLand(lat, lng) {
+    if (!landDataReady) return false;
+    for (const p of landPolygons) {
+        const b = p.bounds;
+        if (lat<b.minLat||lat>b.maxLat||lng<b.minLng||lng>b.maxLng) continue;
+        if (!pointInRing(lng,lat,p.outer)) continue;
+        let inHole = false;
+        for (const h of p.holes) if (pointInRing(lng,lat,h)) { inHole=true; break; }
+        if (!inHole) return true;
+    }
+    return false;
+}
+
+function distToSegment(lat,lng,lat1,lng1,lat2,lng2) {
+    const dx=lng2-lng1, dy=lat2-lat1, len2=dx*dx+dy*dy;
+    if (len2===0) return Math.hypot(lat-lat1,(lng-lng1)*Math.cos(lat*Math.PI/180));
+    let t=((lng-lng1)*dx+(lat-lat1)*dy)/len2;
+    t=Math.max(0,Math.min(1,t));
+    return Math.hypot(lat-(lat1+t*dy),(lng-(lng1+t*dx))*Math.cos(lat*Math.PI/180));
+}
+
+function getDistToLandDirect(lat, lng) {
+    if (isLand(lat,lng)) return 0;
+    let minD = Infinity;
+    for (const s of landSegments) {
+        const bLat = Math.min(s.lat1,s.lat2)-0.3, tLat = Math.max(s.lat1,s.lat2)+0.3;
+        const bLng = Math.min(s.lng1,s.lng2)-0.3, tLng = Math.max(s.lng1,s.lng2)+0.3;
+        if (lat<bLat||lat>tLat||lng<bLng||lng>tLng) continue;
+        minD = Math.min(minD, distToSegment(lat,lng,s.lat1,s.lng1,s.lat2,s.lng2));
+    }
+    return minD === Infinity ? 2.0 : minD;
+}
+
+// ═══════════════════════════════════════════════════════════
+// BATHYMETRY — precomputed grid (한반도 주변, 1회 계산)
+// ═══════════════════════════════════════════════════════════
+function buildDepthGridOnce() {
+    const step = 0.08;
+    const rows = [], lats = [], lngs = [];
+    for (let lat = KOREA_BBOX.minLat; lat <= KOREA_BBOX.maxLat; lat += step) {
+        lats.push(lat);
+        const row = [];
+        for (let lng = KOREA_BBOX.minLng; lng <= KOREA_BBOX.maxLng; lng += step) {
+            if (lngs.length <= row.length) lngs.push(lng);
+            row.push(computeDepthAt(lat, lng));
+        }
+        rows.push(row);
+    }
+    depthGrid = rows;
+    depthGridMeta = { lats, lngs, step };
+}
+
+function getBathyRegion(lat, lng) {
+    for (const r of BATHY_REGIONS) if (r.test(lat,lng)) return r;
+    return BATHY_REGIONS[3];
+}
+
+function computeDepthAt(lat, lng) {
+    if (isLand(lat,lng)) return 0;
+    const distKm = getDistToLandDirect(lat,lng) * 111;
+    const region = getBathyRegion(lat,lng);
+    const scale = (+document.getElementById('depthSlider')?.value || 100) / 100;
+    // 대륙붕: KHOA 황해 평균 44m, 동해 168m, 남해 120m 근사
+    const shelf = region.shelfDepth * scale;
+    const depth = shelf * (1 - Math.exp(-distKm * region.slope * 0.08)) + distKm * region.slope * 2.5;
+    return Math.min(500, Math.max(4, depth));
+}
+
+function getWaterDepth(lat, lng) {
+    if (isLand(lat,lng)) return 0;
+    if (!depthGrid || !depthGridMeta) return computeDepthAt(lat,lng);
+
+    const { lats, lngs } = depthGridMeta;
+    if (lat < lats[0] || lat > lats[lats.length-1] || lng < lngs[0] || lng > lngs[lngs.length-1]) {
+        return computeDepthAt(lat,lng); // 그리드 밖: 직접 계산 (엣지 오류 방지)
+    }
+    const li = Math.min(lats.length-2, Math.max(0, Math.floor((lat-lats[0])/(lats[1]-lats[0]))));
+    const lj = Math.min(lngs.length-2, Math.max(0, Math.floor((lng-lngs[0])/(lngs[1]-lngs[0]))));
+    const ft = (lat-lats[li])/(lats[1]-lats[0]||1);
+    const fu = (lng-lngs[lj])/(lngs[1]-lngs[0]||1);
+    const d00=depthGrid[li][lj], d01=depthGrid[li][lj+1], d10=depthGrid[li+1][lj], d11=depthGrid[li+1][lj+1];
+    return d00*(1-ft)*(1-fu)+d01*(1-ft)*fu+d10*ft*(1-fu)+d11*ft*fu;
+}
+
+// ═══════════════════════════════════════════════════════════
+// COLLISION — sub-step + segment check + probabilistic beaching
+// ═══════════════════════════════════════════════════════════
+const BEACH_CAPTURE_PROB = 0.58;
+
+function segmentCrossesLand(lat1,lng1,lat2,lng2,steps=12) {
+    for (let i=1;i<=steps;i++) {
+        const t=i/steps;
+        const lat=lat1+(lat2-lat1)*t, lng=lng1+(lng2-lng1)*t;
+        if (isLand(lat,lng)) return { hit:true, lat, lng, t };
+    }
+    return { hit:false };
+}
+
+function resolveCoastCollision(p, hitLat, hitLng, cu, cv, scale) {
+    if (Math.random() < BEACH_CAPTURE_PROB) {
+        p.markStopped('beached');
+        return null;
+    }
+    const altLat = p.lat + cv * scale * 0.5;
+    const altLng = p.lng + cu * scale * 0.5;
+    if (!isLand(altLat, p.lng)) return { lat:altLat, lng:p.lng };
+    if (!isLand(p.lat, altLng)) return { lat:p.lat, lng:altLng };
+    if (!isLand(altLat, altLng)) return { lat:altLat, lng:altLng };
+    p.markStopped('beached');
+    return null;
+}
+
+// ═══════════════════════════════════════════════════════════
+// MPA
+// ═══════════════════════════════════════════════════════════
+function isInMPA(lat, lng) {
+    for (const z of MPA_ZONES) {
+        const dLat = lat - z.center[0], dLng = (lng - z.center[1]) * Math.cos(lat * Math.PI / 180);
+        if (Math.hypot(dLat, dLng) <= z.radius) return z;
+    }
+    return null;
+}
+
+function checkMPAEvent(p) {
+    const zone = isInMPA(p.lat, p.lng);
+    if (!zone || p._lastMPA === zone.id) return;
+    p._lastMPA = zone.id;
+    if (!p._mpaWarned) {
+        p._mpaWarned = true;
+        mpaViolationCount++;
+        totalRiskScore += p.type.ecoThreat * 10;
+        showToast(`⚠️ 해양보호구역 오염 발생! · ${zone.name}`, 'warn');
+        updateStats();
+    }
+}
+
+function renderMPALayer() {
+    if (mpaLayer) map.removeLayer(mpaLayer);
+    if (!document.getElementById('showMPA').checked) return;
+    const group = L.layerGroup();
+    MPA_ZONES.forEach(z => {
+        L.circle(z.center, {
+            radius: z.radius * 111000,
+            color: z.color, weight: 1.5, fillColor: z.color,
+            fillOpacity: 0.12, dashArray: '6 4', interactive: false
+        }).bindTooltip(z.name, { sticky: true }).addTo(group);
+    });
+    mpaLayer = group.addTo(map);
+}
+
+// ═══════════════════════════════════════════════════════════
+// WIND & CURRENTS (Korean Peninsula)
+// ═══════════════════════════════════════════════════════════
+const WIND_PRESETS = {
+    none:   { name:'없음', u:0, v:0 },
+    summer: { name:'여름 몬순 (남서풍)', u:-0.042, v:0.028 },
+    winter: { name:'겨울 북서풍', u:0.052, v:-0.032 }
+};
+let currentWind = 'summer';
+
+function setWindPreset(key) {
+    currentWind = key;
+    document.querySelectorAll('.wind-btn').forEach(b => b.classList.toggle('active', b.dataset.wind===key));
+    scheduleOverlayRebuild();
+}
+
+function gauss(v,c,s) { const d=(v-c)/s; return Math.exp(-0.5*d*d); }
+
+function getSeaCurrent(lat, lng) {
+    let u=0,v=0,tw=0,dom='미약한 해류';
+    const add = (cu,cv,w,name) => { if(w<0.04)return; u+=cu*w; v+=cv*w; tw+=w; if(w>0.3)dom=name; };
+
+    add(Math.cos(Math.PI/4)*0.14, Math.sin(Math.PI/4)*0.14, gauss(lat,34.5,2.5)*gauss(lng,129,1.8), '대마난류');
+    add(0.02, 0.10, gauss(lng,129.8,0.8)*gauss(lat,37,3), '동한난류');
+    add(0.06, -0.04, gauss(lng,124.5,2)*gauss(lat,36,3.5)*(lng<126.5?1:0), '황해 순환');
+    add(-0.02,-0.08, gauss(lat,42,2.5)*gauss(lng,131.5,1.5), '리만 한류');
+    add(0.05, 0.04, gauss(lng,132,2.5)*gauss(lat,39,4)*(lng>129.5?1:0), '동해 순환');
+    add(Math.cos(Math.PI/3)*0.16, Math.sin(Math.PI/3)*0.16, gauss(lng,132.5,2.5)*gauss(lat,34,4), '쿠로시오');
+
+    if (tw>0) { u/=tw; v/=tw; } else { u=0.03; v=0.01; }
+    return { u, v, dominant:dom };
+}
+
+function hash2(x,y){const n=Math.sin(x*127.1+y*311.7)*43758.5453;return n-Math.floor(n);}
+function smoothNoise(lat,lng,t){
+    const sc=8,x=lng*sc+t*0.25,y=lat*sc+t*0.18;
+    const ix=Math.floor(x),iy=Math.floor(y),fx=x-ix,fy=y-iy;
+    const sx=fx*fx*(3-2*fx),sy=fy*fy*(3-2*fy);
+    const n00=hash2(ix,iy),n10=hash2(ix+1,iy),n01=hash2(ix,iy+1),n11=hash2(ix+1,iy+1);
+    return ((n00+sx*(n10-n00))+sy*((n01+sx*(n11-n01))-(n00+sx*(n10-n00))))*2-1;
+}
+
+// ═══════════════════════════════════════════════════════════
+// DEBRIS TYPES — 생태 위험도 포함
+// ═══════════════════════════════════════════════════════════
+let debrisTypes = [
+    { id:'pet', name:'PET 페트병', color:'#ef4444', density:8, windResist:82, maxFloatDepth:9999,
+      decomposeYears:450, ecoThreat:4, pollutionRisk:72 },
+    { id:'nylon', name:'나일론 폐그물', color:'#f59e0b', density:20, windResist:52, maxFloatDepth:9999,
+      decomposeYears:600, ecoThreat:5, pollutionRisk:95 },
+    { id:'gear', name:'폐 어구 (Ghost Gear)', color:'#fb923c', density:35, windResist:40, maxFloatDepth:9999,
+      decomposeYears:600, ecoThreat:5, pollutionRisk:98 },
+    { id:'styro', name:'스티로폼', color:'#a78bfa', density:3, windResist:96, maxFloatDepth:9999,
+      decomposeYears:500, ecoThreat:3, pollutionRisk:65 },
+    { id:'micro', name:'미세플라스틱 (초기)', color:'#f472b6', density:5, windResist:90, maxFloatDepth:9999,
+      decomposeYears:1000, ecoThreat:5, pollutionRisk:88 },
+    { id:'glass', name:'유리병', color:'#34d399', density:58, windResist:30, maxFloatDepth:400,
+      decomposeYears:1000000, ecoThreat:2, pollutionRisk:35 }
+];
+let selectedTypeId = 'pet', customIdCounter = 0;
+
+function riskClass(score) {
+    if (score >= 80) return 'risk-high';
+    if (score >= 50) return 'risk-mid';
+    return 'risk-low';
+}
+
+function riskLabel(score) {
+    if (score >= 80) return '매우 높음';
+    if (score >= 50) return '보통';
+    return '낮음';
+}
+
+// ═══════════════════════════════════════════════════════════
+// MAP
+// ═══════════════════════════════════════════════════════════
+const map = L.map('map',{ zoomControl:false, preferCanvas:true }).setView([36.5,128.5],7);
+L.control.zoom({ position:'bottomright' }).addTo(map);
+L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',{
+    attribution:'&copy; OSM &copy; CARTO', subdomains:'abcd', maxZoom:18
+}).addTo(map);
+
+let particles = [], lastFrameTime = performance.now(), pathUpdateCounter = 0;
+
+// Canvas depth overlay (DOM rectangle 대신)
+const DepthCanvasOverlay = L.Layer.extend({
+    onAdd(map) {
+        this._map = map;
+        this._canvas = L.DomUtil.create('canvas','leaflet-depth-canvas');
+        this._canvas.style.position = 'absolute';
+        this._canvas.style.pointerEvents = 'none';
+        this._canvas.style.opacity = '0.55';
+        map.getPanes().overlayPane.appendChild(this._canvas);
+        map.on('moveend zoomend resize', this._draw, this);
+        this._draw();
+    },
+    onRemove(map) {
+        map.getPanes().overlayPane.removeChild(this._canvas);
+        map.off('moveend zoomend resize', this._draw, this);
+    },
+    _draw() {
+        if (!document.getElementById('showDepth').checked || !depthGrid) {
+            this._canvas.style.display = 'none';
+            return;
+        }
+        this._canvas.style.display = 'block';
+        const map = this._map, size = map.getSize();
+        this._canvas.width = size.x; this._canvas.height = size.y;
+        const ctx = this._canvas.getContext('2d');
+        ctx.clearRect(0,0,size.x,size.y);
+        const step = map.getZoom() >= 9 ? 6 : map.getZoom() >= 7 ? 10 : 16;
+        for (let px=0; px<size.x; px+=step) {
+            for (let py=0; py<size.y; py+=step) {
+                const ll = map.containerPointToLatLng([px,py]);
+                if (isLand(ll.lat,ll.lng)) continue;
+                const d = getWaterDepth(ll.lat,ll.lng);
+                const t = Math.min(1, d/200);
+                ctx.fillStyle = `rgba(8,${Math.round(40+t*80)},${Math.round(100+t*120)},${0.15+t*0.35})`;
+                ctx.fillRect(px,py,step,step);
+            }
+        }
+    }
+});
+
+async function loadLandGeoJSON() {
+    try {
+        const res = await fetch(GEOJSON_URL);
+        if (!res.ok) throw new Error('fetch fail');
+        const geo = await res.json();
+        const features = geo.features.filter(f => LAND_CODES.includes(f.properties['ISO3166-1-Alpha-3']));
+        extractLandGeometry(features);
+        landDataReady = true;
+
+        if (landLayer) map.removeLayer(landLayer);
+        landLayer = L.geoJSON(features, {
+            style:{ color:'rgba(255,255,255,0.06)', weight:1, fillColor:'#0f172a', fillOpacity:0.92, interactive:false }
+        }).addTo(map);
+        ISLAND_SUPPLEMENTS.forEach(island => {
+            L.polygon(island.outer.map(p=>[p[1],p[0]]), {
+                color:'#64748b', weight:1, fillColor:'#1e293b', fillOpacity:0.9, interactive:false
+            }).addTo(map);
+        });
+
+        document.getElementById('loadingText').textContent = '수심 격자 계산 중…';
+        buildDepthGridOnce();
+        depthCanvasLayer = new DepthCanvasOverlay();
+        if (document.getElementById('showDepth').checked) depthCanvasLayer.addTo(map);
+        renderMPALayer();
+        document.getElementById('loadingOverlay').classList.add('hidden');
+    } catch(e) {
+        console.error(e);
+        document.getElementById('loadingText').textContent = '해안선 로드 실패 — Live Server로 실행해 주세요.';
+    }
+}
+
+function scheduleOverlayRebuild() {
+    clearTimeout(overlayRebuildTimer);
+    overlayRebuildTimer = setTimeout(() => {
+        if (depthCanvasLayer) depthCanvasLayer._draw();
+        buildVectorField();
+    }, 280);
+}
+
+function buildVectorField() {
+    if (vectorLayer) map.removeLayer(vectorLayer);
+    if (!document.getElementById('showVectors').checked) return;
+    const group = L.layerGroup(), b = map.getBounds();
+    const step = map.getZoom() >= 9 ? 0.5 : map.getZoom() >= 7 ? 0.8 : 1.2;
+    for (let lat=b.getSouth(); lat<=b.getNorth(); lat+=step) {
+        for (let lng=b.getWest(); lng<=b.getEast(); lng+=step) {
+            if (isLand(lat,lng)) continue;
+            const {u,v}=getSeaCurrent(lat,lng), mag=Math.hypot(u,v);
+            if (mag<0.008) continue;
+            L.polyline([[lat,lng],[lat+v/mag*0.07,lng+u/mag*0.07]],{
+                color:'#22d3ee', weight:1.2, opacity:0.45, interactive:false
+            }).addTo(group);
+        }
+    }
+    vectorLayer = group.addTo(map);
+}
+
+// ═══════════════════════════════════════════════════════════
+// DEBRIS PARTICLE
+// ═══════════════════════════════════════════════════════════
+class Debris {
+    constructor(lat, lng, type) {
+        this.lat=lat; this.lng=lng; this.type=type;
+        this.state='drifting';
+        this.phase=Math.random()*Math.PI*2;
+        this.noiseU=0; this.noiseV=0; this.age=0;
+        this._mpaWarned=false; this._lastMPA=null;
+        this.pathRing = [[lat,lng]];
+        this.pathDirty = false;
+
+        this.marker = L.circleMarker([lat,lng],{
+            radius:5, color:type.color, fillColor:type.color, fillOpacity:0.9, weight:2
+        }).addTo(map);
+        this.polyline = L.polyline(this.pathRing,{
+            color:type.color, weight:1.8, opacity:0.35, dashArray:'4 6'
+        }).addTo(map);
+    }
+
+    markStopped(state) {
+        this.state = state;
+        this.marker.setStyle({ color:'#1e293b', fillColor:'#0f172a', fillOpacity:0.95, radius:4 });
+        updateStats();
+    }
+
+    move(speed, turb, dt) {
+        if (this.state !== 'drifting') return;
+
+        const t = this.type;
+        const depth = getWaterDepth(this.lat, this.lng);
+        if (t.maxFloatDepth < 9000) {
+            const threshold = t.maxFloatDepth * (1 - t.density / 600);
+            if (depth > threshold) { this.markStopped('sunk'); return; }
+        }
+
+        const cur = getSeaCurrent(this.lat, this.lng);
+        const wind = WIND_PRESETS[currentWind];
+        const scale = speed * 0.009 * Math.min(dt, 2);
+        const wf = t.windResist / 100;
+        const cf = 0.55 + t.density / 250;
+
+        this.noiseU = this.noiseU*0.92 + (Math.random()-0.5)*turb*0.00025*wf;
+        this.noiseV = this.noiseV*0.92 + (Math.random()-0.5)*turb*0.00025*wf;
+        this.age += dt;
+        const wu = Math.sin(this.age*2.1+this.phase)*turb*0.00007*wf;
+        const wv = Math.cos(this.age*1.6+this.phase)*turb*0.00007*wf;
+        const now = performance.now()/1000;
+        const eu = smoothNoise(this.lat,this.lng,now)*turb*0.0001*wf;
+        const ev = smoothNoise(this.lat+8,this.lng+8,now+40)*turb*0.0001*wf;
+
+        const cu = cur.u*cf + wind.u*wf + this.noiseU + wu + eu;
+        const cv = cur.v*cf + wind.v*wf + this.noiseV + wv + ev;
+
+        const targetLat = this.lat + cv * scale;
+        const targetLng = this.lng + cu * scale;
+
+        // Sub-step collision (tunneling 방지)
+        const steps = Math.max(6, Math.ceil(Math.hypot(cv*scale, cu*scale) * 800));
+        const collision = segmentCrossesLand(this.lat, this.lng, targetLat, targetLng, steps);
+
+        if (collision.hit) {
+            const resolved = resolveCoastCollision(this, collision.lat, collision.lng, cu, cv, scale);
+            if (!resolved) return;
+            this.lat = resolved.lat; this.lng = resolved.lng;
+        } else {
+            this.lat = targetLat; this.lng = targetLng;
+        }
+
+        this.marker.setLatLng([this.lat, this.lng]);
+        checkMPAEvent(this);
+
+        if (document.getElementById('showPaths').checked) {
+            this.pathRing.push([this.lat, this.lng]);
+            if (this.pathRing.length > 300) this.pathRing.shift();
+            this.pathDirty = true;
+        }
+    }
+
+    flushPath() {
+        if (this.pathDirty) { this.polyline.setLatLngs(this.pathRing); this.pathDirty = false; }
+    }
+
+    setPathVisible(v) { if(v) map.addLayer(this.polyline); else map.removeLayer(this.polyline); }
+}
+
+// ═══════════════════════════════════════════════════════════
+// UI
+// ═══════════════════════════════════════════════════════════
+function renderPalette() {
+    document.getElementById('debrisPalette').innerHTML = debrisTypes.map(t => `
+        <button class="debris-btn ${t.id===selectedTypeId?'active':''}" onclick="selectType('${t.id}')">
+            <span class="dot" style="background:${t.color};color:${t.color}"></span>
+            <span class="info">${t.name}
+                <small>밀도 ${t.density} · 바람 ${t.windResist} · 분해 ${t.decomposeYears>=1000?t.decomposeYears/1000+'천년+':t.decomposeYears+'년'}</small>
+                <span class="risk-badge ${riskClass(t.pollutionRisk)}">오염위험 ${t.pollutionRisk} · ${riskLabel(t.pollutionRisk)}</span>
+            </span>
+        </button>`).join('');
+}
+
+function selectType(id) { selectedTypeId=id; renderPalette(); }
+
+function addCustomDebris() {
+    const name = document.getElementById('customName').value.trim();
+    if (!name) { showToast('이름을 입력하세요.','error'); return; }
+    const density = +document.getElementById('cDensity').value;
+    const windResist = +document.getElementById('cWind').value;
+    const maxFloatDepth = +document.getElementById('cFloat').value;
+    const id = 'custom_'+(++customIdCounter);
+    debrisTypes.push({
+        id, name, color:document.getElementById('customColor').value,
+        density, windResist, maxFloatDepth,
+        decomposeYears: Math.round(50 + density * 8),
+        ecoThreat: Math.min(5, Math.ceil(density / 22)),
+        pollutionRisk: Math.min(99, Math.round(density * 0.6 + (9999-maxFloatDepth)/100))
+    });
+    selectedTypeId = id;
+    document.getElementById('customName').value = '';
+    renderPalette();
+    showToast(`"${name}" 추가됨`, 'info');
+}
+
+function getStatsData() {
+    const total = particles.length;
+    const drift = particles.filter(p=>p.state==='drifting').length;
+    const beach = particles.filter(p=>p.state==='beached').length;
+    const sunk = particles.filter(p=>p.state==='sunk').length;
+    const pct = v => total ? (v/total*100).toFixed(1) : '0.0';
+    const byType = {};
+    debrisTypes.forEach(t => byType[t.id]={ type:t, total:0, drift:0, beach:0, sunk:0 });
+    particles.forEach(p => {
+        const k=p.type.id;
+        if (!byType[k]) byType[k]={ type:p.type, total:0, drift:0, beach:0, sunk:0 };
+        byType[k].total++;
+        byType[k][p.state==='drifting'?'drift':p.state]++;
+    });
+    const avgRisk = total ? Math.round(particles.reduce((s,p)=>s+p.type.pollutionRisk,0)/total) : 0;
+    return { total, drift, beach, sunk, pct, byType, avgRisk };
+}
+
+function updateStats() {
+    const s = getStatsData();
+    document.getElementById('statTotal').textContent = s.total;
+    document.getElementById('statDrift').textContent = s.drift;
+    document.getElementById('statBeach').textContent = s.beach;
+    document.getElementById('statSunk').textContent = s.sunk;
+    document.getElementById('statMPA').textContent = mpaViolationCount;
+    document.getElementById('statRisk').textContent = s.avgRisk;
+}
+
+function openReportModal() {
+    const s = getStatsData();
+    const segments = [
+        { label:'표류 중', value:s.drift, color:'#22d3ee' },
+        { label:'해안 표착', value:s.beach, color:'#fbbf24' },
+        { label:'해저 침강', value:s.sunk, color:'#334155' }
+    ];
+    let grad='conic-gradient(', acc=0;
+    segments.forEach((seg,i)=>{
+        const p=s.total?seg.value/s.total*100:0;
+        grad+=`${seg.color} ${acc}% ${acc+p}%`; acc+=p; if(i<segments.length-1)grad+=', ';
+    });
+    if(!s.total) grad='conic-gradient(#334155 0% 100%)'; grad+=')';
+
+    const typeRows = Object.values(s.byType).filter(r=>r.total>0).map(r=>{
+        const rp = r.total ? (r.drift/r.total*100).toFixed(0) : 0;
+        return `<tr>
+            <td><span class="type-dot" style="background:${r.type.color}"></span>${r.type.name}</td>
+            <td>${r.total}</td><td>${r.drift}</td><td>${r.beach}</td><td>${r.sunk}</td>
+            <td><span class="risk-badge ${riskClass(r.type.pollutionRisk)}">${r.type.pollutionRisk}</span></td>
+            <td>${rp}%</td></tr>`;
+    }).join('') || '<tr><td colspan="7" style="color:var(--muted);text-align:center">데이터 없음</td></tr>';
+
+    document.getElementById('reportBody').innerHTML = `
+        <div class="rep-grid">
+            <div class="rep-card"><h4>총 입자</h4><p>${s.total}</p></div>
+            <div class="rep-card"><h4>표류</h4><p style="color:var(--accent)">${s.pct(s.drift)}%</p></div>
+            <div class="rep-card"><h4>해안</h4><p style="color:var(--warn)">${s.pct(s.beach)}%</p></div>
+            <div class="rep-card"><h4>MPA 침범</h4><p style="color:var(--ok)">${mpaViolationCount}건</p></div>
+        </div>
+        <div class="donut-wrap">
+            <div class="donut" style="background:${grad}">
+                <div class="donut-hole"><div class="total">${s.total}</div><div class="lbl">총 입자</div></div>
+            </div>
+            <div class="donut-legend">
+                ${segments.map(seg=>`<div class="legend-row"><span>${seg.label}</span><b>${s.pct(seg.value)}% (${seg.value})</b></div>`).join('')}
+                <div class="legend-row"><span>평균 오염 위험 지수</span><b>${s.avgRisk} / 100</b></div>
+            </div>
+        </div>
+        <table class="stats-table">
+            <thead><tr><th>종류</th><th>전체</th><th>표류</th><th>해안</th><th>침강</th><th>위험도</th><th>표류율</th></tr></thead>
+            <tbody>${typeRows}</tbody>
+        </table>
+        <div class="sdg-footer">
+            <strong>SDG 14.1</strong> — 해양 쓰레기·영양 오염 등 모든 유형의 해양 오염을 예방하고 대폭 줄여야 합니다.<br>
+            <strong>SDG 14.5</strong> — 해양·연안 지역 10% 이상 보전으로 생태계 회복력을 강화합니다.<br>
+            <strong>SDG 14.c</strong> — 해양 쓰레기는 국경을 초월하므로 국제 연대와 MPA 보호가 필수입니다.
+        </div>`;
+    document.getElementById('reportModal').classList.add('open');
+}
+
+function closeReportModal() {
+    document.getElementById('reportModal').classList.remove('open');
+}
+
+function showToast(msg, type='error') {
+    const el = document.getElementById('toast');
+    el.textContent = msg;
+    el.className = 'toast show ' + (type||'error');
+    clearTimeout(el._t);
+    el._t = setTimeout(()=>el.classList.remove('show'), 3200);
+}
+
+function clearParticles() {
+    particles.forEach(p=>{ map.removeLayer(p.marker); map.removeLayer(p.polyline); });
+    particles=[]; mpaViolationCount=0; totalRiskScore=0;
+    updateStats();
+    showToast('초기화 완료','info');
+}
+
+// ═══════════════════════════════════════════════════════════
+// EVENTS
+// ═══════════════════════════════════════════════════════════
+map.on('click', e => {
+    if (!landDataReady) { showToast('데이터 로드 중…','warn'); return; }
+    if (isLand(e.latlng.lat, e.latlng.lng)) {
+        showToast('육지에는 투입할 수 없습니다.','error'); return;
+    }
+    const type = debrisTypes.find(t=>t.id===selectedTypeId);
+    if (!type) return;
+    const zone = isInMPA(e.latlng.lat, e.latlng.lng);
+    if (zone) showToast(`⚠️ ${zone.name}에 쓰레기 투입!`, 'warn');
+    particles.push(new Debris(e.latlng.lat, e.latlng.lng, type));
+    updateStats();
+});
+
+map.on('mousemove', e => {
+    if (!landDataReady) return;
+    const {lat,lng}=e.latlng;
+    if (isLand(lat,lng)) { document.getElementById('cursorInfo').innerHTML='<strong>육지</strong>'; return; }
+    const {dominant}=getSeaCurrent(lat,lng);
+    const depth=getWaterDepth(lat,lng).toFixed(0);
+    const type=debrisTypes.find(t=>t.id===selectedTypeId);
+    const mpa=isInMPA(lat,lng);
+    document.getElementById('cursorInfo').innerHTML=
+        `<strong>${type?.name||''}</strong> · ${dominant}<br>
+         ${WIND_PRESETS[currentWind].name} · 수심 ~${depth}m<br>
+         ${mpa?`⚠️ ${mpa.name}`:'일반 해역'} · ${lat.toFixed(2)}°N ${lng.toFixed(2)}°E`;
+});
+
+map.on('moveend zoomend', scheduleOverlayRebuild);
+
+document.getElementById('depthSlider').addEventListener('input', function(){
+    document.getElementById('depthValue').textContent=this.value;
+    buildDepthGridOnce();
+    scheduleOverlayRebuild();
+});
+['speedSlider','turbSlider'].forEach(id=>{
+    document.getElementById(id).addEventListener('input', function(){
+        document.getElementById(id.replace('Slider','Value')).textContent=this.value;
+    });
+});
+document.getElementById('cDensity').addEventListener('input',function(){document.getElementById('cDensityVal').textContent=this.value;});
+document.getElementById('cWind').addEventListener('input',function(){document.getElementById('cWindVal').textContent=this.value;});
+document.getElementById('cFloat').addEventListener('input',function(){document.getElementById('cFloatVal').textContent=this.value;});
+
+document.getElementById('showDepth').addEventListener('change', ()=>{
+    if (!depthCanvasLayer) return;
+    if (document.getElementById('showDepth').checked) {
+        if (!map.hasLayer(depthCanvasLayer)) depthCanvasLayer.addTo(map);
+    } else if (map.hasLayer(depthCanvasLayer)) {
+        map.removeLayer(depthCanvasLayer);
+    }
+    scheduleOverlayRebuild();
+});
+document.getElementById('showVectors').addEventListener('change', scheduleOverlayRebuild);
+document.getElementById('showMPA').addEventListener('change', renderMPALayer);
+document.getElementById('showPaths').addEventListener('change', function(){
+    particles.forEach(p=>p.setPathVisible(this.checked));
+});
+document.getElementById('reportModal').addEventListener('click', e=>{
+    if (e.target===document.getElementById('reportModal')) closeReportModal();
+});
+document.addEventListener('keydown', e=>{ if(e.key==='Escape') closeReportModal(); });
+
+function animate(now) {
+    const dt = Math.min((now-lastFrameTime)/16.67, 2.5);
+    lastFrameTime = now;
+    const speed = +document.getElementById('speedSlider').value;
+    const turb = +document.getElementById('turbSlider').value;
+    particles.forEach(p=>p.move(speed,turb,dt));
+    pathUpdateCounter++;
+    if (pathUpdateCounter % 3 === 0) particles.forEach(p=>p.flushPath());
+    requestAnimationFrame(animate);
+}
+
+renderPalette();
+loadLandGeoJSON();
+requestAnimationFrame(animate);
+</script>
+</body>
+</html>
